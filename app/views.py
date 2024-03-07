@@ -1,10 +1,20 @@
+"""
+Flask Documentation:     http://flask.pocoo.org/docs/
+Jinja2 Documentation:    http://jinja.pocoo.org/2/documentation/
+Werkzeug Documentation:  http://werkzeug.pocoo.org/documentation/
+This file creates your application.
+"""
+
+
 import os
 from app import app, db, login_manager
 from flask import render_template, request, redirect, url_for, flash, session, abort
 from flask_login import login_user, logout_user, current_user, login_required
-from werkzeug.utils import secure_filename
+from werkzeug.security import check_password_hash
 from app.models import UserProfile
 from app.forms import LoginForm
+from app.forms import UploadForm
+from werkzeug.utils import secure_filename
 
 
 ###
@@ -20,26 +30,53 @@ def home():
 @app.route('/about/')
 def about():
     """Render the website's about page."""
-    return render_template('about.html', name="Mary Jane")
+    return render_template('about.html', name="Reynaldo Kelly")
 
 
 @app.route('/upload', methods=['POST', 'GET'])
+@login_required
 def upload():
     # Instantiate your form class
-
+    form=LoginForm()
+    formobject = UploadForm()
     # Validate file upload on submit
-    if form.validate_on_submit():
+    if request.method == 'POST':
+        if formobject.validate_on_submit(): 
+            fileobj = request.files['fileField']
+            cleanedname = secure_filename(fileobj.filename)
         # Get file data and save to your uploads folder
-
-        flash('File Saved', 'success')
-        return redirect(url_for('home')) # Update this to redirect the user to a route that displays all uploaded image files
-
-    return render_template('upload.html')
+            if fileobj and cleanedname != "":
+                fileobj.save(os.path.join(app.config['UPLOAD_FOLDER'], cleanedname))
+                flash('File Saved', 'success')
+                return redirect(url_for('home'))
+                #flash('Illegal file detected. Ensure your file has a name and is in one of the following formats: png, jpg, jpeg.', 'danger')
+    flash_errors(formobject) 
+    return render_template('upload.html', formobj = formobject)
 
 
 @app.route('/login', methods=['POST', 'GET'])
 def login():
     form = LoginForm()
+    if request.method == "POST":
+        if  form.validate_on_submit():
+            username = form.username.data
+            password = form.password.data
+            user = UserProfile.query.filter_by(username=username).first()
+            if user is not None and check_password_hash(user.password, password):
+                login_user(user)
+                flash('You are now logged in.', 'success')
+                return redirect(url_for("upload")) 
+            else:
+                flash('Something went wrong. Check your access info and try again.', 'danger')
+    return render_template("login.html", form=form)
+
+@app.route("/logout")
+@login_required
+def logout():
+    logout_user()
+    flash('You have logged out.', 'danger')
+    return redirect(url_for('home'))
+
 
     # change this to actually validate the entire form submission
     # and not just one field
@@ -76,7 +113,7 @@ def flash_errors(form):
             flash(u"Error in the %s field - %s" % (
                 getattr(form, field).label.text,
                 error
-), 'danger')
+                ), 'danger')
 
 @app.route('/<file_name>.txt')
 def send_text_file(file_name):
@@ -100,3 +137,6 @@ def add_header(response):
 def page_not_found(error):
     """Custom 404 page."""
     return render_template('404.html'), 404
+
+if __name__ == '__main__':
+    app.run(debug=True, host="0.0.0.0", port="8080")
